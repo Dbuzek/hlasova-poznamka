@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hlasová poznámka</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Poznámka" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #181c27;
+      --border:    #262c3d;
+      --accent:    #c8a96e;
+      --accent2:   #7eb8f7;
+      --text:      #e8e4dc;
+      --muted:     #6b7280;
+      --danger:    #e06c75;
+      --radius:    14px;
+      --font-serif: 'DM Serif Display', Georgia, serif;
+      --font-mono:  'DM Mono', 'Courier New', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-weight: 400;
+      color: var(--accent);
+      letter-spacing: 0.01em;
+    }
+
+    header h1 span { color: var(--muted); font-style: italic; }
+
+    .btn-settings {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      transition: all .2s;
+    }
+    .btn-settings:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 24px 20px;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── Record button area ── */
+    .record-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .record-btn {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .25s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .record-btn::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      opacity: 0.2;
+      transition: all .25s;
+    }
+
+    .record-btn:hover::before, .record-btn.recording::before {
+      opacity: 0.6;
+      inset: -14px;
+    }
+
+    .record-btn.recording {
+      border-color: var(--danger);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    .record-btn.recording::before { border-color: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(224,108,117,0.4); }
+      50%       { box-shadow: 0 0 0 16px rgba(224,108,117,0); }
+    }
+
+    .record-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      transition: all .25s;
+    }
+
+    .record-btn.recording .record-icon {
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      background: var(--danger);
+    }
+
+    .record-label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .timer {
+      font-size: 13px;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      min-height: 20px;
+    }
+
+    /* ── Waveform ── */
+    .waveform-wrap {
+      width: 100%;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity .3s;
+    }
+    .waveform-wrap.active { opacity: 1; }
+
+    .bar {
+      width: 3px;
+      height: 4px;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: height .1s ease;
+    }
+
+    /* ── Status / progress ── */
+    .status {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 20px;
+      letter-spacing: 0.04em;
+    }
+
+    .status.active { color: var(--accent2); }
+    .status.error  { color: var(--danger); }
+
+    /* ── Steps indicator ── */
+    .steps {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .step-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .3s;
+    }
+
+    .step.done .step-dot  { background: var(--accent); }
+    .step.active .step-dot { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+    .step.done { color: var(--accent); }
+    .step.active { color: var(--accent2); }
+
+    .step-line {
+      width: 28px;
+      height: 1px;
+      background: var(--border);
+      margin: 0 4px;
+      transition: background .3s;
+    }
+    .step-line.done { background: var(--accent); }
+
+    /* ── Result area ── */
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: none;
+    }
+
+    .result-card.visible { display: block; animation: fadeUp .3s ease; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 10px 16px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .2s;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      font-family: var(--font-mono);
+    }
+
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .tab-panel { display: none; padding: 16px; }
+    .tab-panel.active { display: block; }
+
+    .result-text {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 60px;
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 10px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      border: 1px solid;
+      transition: all .2s;
+      letter-spacing: 0.04em;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--bg);
+      font-weight: 500;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+
+    .btn-secondary {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--muted);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    .copied-badge {
+      font-size: 12px;
+      color: var(--accent);
+      opacity: 0;
+      transition: opacity .3s;
+      align-self: center;
+    }
+    .copied-badge.show { opacity: 1; }
+
+    /* ── Settings modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 440px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .modal h2 {
+      font-family: var(--font-serif);
+      font-weight: 400;
+      font-size: 20px;
+      color: var(--accent);
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .field label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .field input, .field textarea, .field select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      padding: 10px 12px;
+      width: 100%;
+      transition: border-color .2s;
+      resize: vertical;
+    }
+
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .field textarea { min-height: 90px; }
+
+    .field select option { background: var(--surface); }
+
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 12px 20px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Hlasová <span>poznámka</span></h1>
+  <button class="btn-settings" onclick="openSettings()">⚙ Nastavení</button>
+</header>
+
+<main>
+
+  <!-- Record -->
+  <div class="record-area">
+    <button class="record-btn" id="recordBtn" onclick="toggleRecord()">
+      <div class="record-icon" id="recordIcon"></div>
+    </button>
+    <div class="record-label" id="recordLabel">Nahrát poznámku</div>
+    <div class="timer" id="timer"></div>
+  </div>
+
+  <!-- Waveform -->
+  <div class="waveform-wrap" id="waveform">
+    <!-- bars injected by JS -->
+  </div>
+
+  <!-- Steps -->
+  <div class="steps" id="steps">
+    <div class="step" id="s1"><div class="step-dot"></div>Nahrávání</div>
+    <div class="step-line" id="l1"></div>
+    <div class="step" id="s2"><div class="step-dot"></div>Přepis</div>
+    <div class="step-line" id="l2"></div>
+    <div class="step" id="s3"><div class="step-dot"></div>Úprava</div>
+    <div class="step-line" id="l3"></div>
+    <div class="step" id="s4"><div class="step-dot"></div>Hotovo</div>
+  </div>
+
+  <!-- Status -->
+  <div class="status" id="status">Stiskni tlačítko a začni mluvit</div>
+
+  <!-- Result -->
+  <div class="result-card" id="resultCard">
+    <div class="result-tabs">
+      <button class="tab active" onclick="switchTab('edited')">Upravený text</button>
+      <button class="tab" onclick="switchTab('raw')">Přepis</button>
+    </div>
+    <div class="tab-panel active" id="panel-edited">
+      <div class="result-text" id="textEdited"></div>
+    </div>
+    <div class="tab-panel" id="panel-raw">
+      <div class="result-text" id="textRaw"></div>
+    </div>
+    <div class="result-actions">
+      <button class="btn btn-primary" onclick="copyToClipboard()">Kopírovat</button>
+      <button class="btn btn-secondary" onclick="resetAll()">Nová poznámka</button>
+      <span class="copied-badge" id="copiedBadge">✓ Zkopírováno</span>
+    </div>
+  </div>
+
+</main>
+
+<footer>OpenAI Whisper · GPT-4o</footer>
+
+<!-- Settings modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h2>Nastavení API</h2>
+
+    <div class="field">
+      <label>OpenAI API klíč</label>
+      <input type="password" id="oaKey" placeholder="sk-..." />
+      <span style="font-size:12px; color: var(--muted); margin-top:4px;">
+        Klíč nemáš? Získej ho na
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener"
+           style="color: var(--accent); text-decoration: underline;">platform.openai.com/api-keys</a>
+      </span>
+    </div>
+
+    <div class="field">
+      <label>Model OpenAI</label>
+      <select id="oaModel">
+        <option value="gpt-4o">GPT-4o</option>
+        <option value="gpt-4o-mini">GPT-4o mini (rychlejší, levnější)</option>
+        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Instrukce pro úpravu textu</label>
+      <textarea id="oaPrompt">Jsi editor textu. Tvým úkolem je upravit přepis mluveného slova do čistého, gramaticky správného českého textu. Oprav interpunkci, odstraň zbytečná opakování a slovní výplně. Zachovej původní smysl a obsah. Neodpovídáš na otázky ani nepřidáváš žádné komentáře — pouze upravuješ text. Vrať výhradně upravený text.</textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeSettings()">Zrušit</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Uložit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──
+  let mediaRecorder = null;
+  let audioChunks   = [];
+  let timerInterval = null;
+  let timerSec      = 0;
+  let analyser      = null;
+  let animFrame     = null;
+  let currentTab    = 'edited';
+
+  // ── Waveform bars ──
+  const waveform = document.getElementById('waveform');
+  const BAR_COUNT = 28;
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const b = document.createElement('div');
+    b.className = 'bar';
+    waveform.appendChild(b);
+  }
+  const bars = waveform.querySelectorAll('.bar');
+
+  // ── Settings ──
+  function openSettings() {
+    document.getElementById('oaKey').value    = localStorage.getItem('oa_key')  || '';
+    document.getElementById('oaModel').value  = localStorage.getItem('oa_model') || 'gpt-4o';
+    document.getElementById('oaPrompt').value = localStorage.getItem('oa_prompt') ||
+      'Jsi editor textu. Tvým úkolem je upravit přepis mluveného slova do čistého, gramaticky správného českého textu. Oprav interpunkci, odstraň zbytečná opakování a slovní výplně. Zachovej původní smysl a obsah. Neodpovídáš na otázky ani nepřidáváš žádné komentáře — pouze upravuješ text. Vrať výhradně upravený text.';
+    document.getElementById('settingsModal').classList.add('open');
+  }
+
+  function closeSettings() {
+    document.getElementById('settingsModal').classList.remove('open');
+  }
+
+  function saveSettings() {
+    localStorage.setItem('oa_key',    document.getElementById('oaKey').value.trim());
+    localStorage.setItem('oa_model',  document.getElementById('oaModel').value);
+    localStorage.setItem('oa_prompt', document.getElementById('oaPrompt').value.trim());
+    closeSettings();
+  }
+
+  // ── UI helpers ──
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status ' + type;
+  }
+
+  function setStep(active) {
+    // active: 1-4, completed = all below
+    ['s1','s2','s3','s4'].forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.classList.remove('done','active');
+      if (i + 1 < active) el.classList.add('done');
+      if (i + 1 === active) el.classList.add('active');
+    });
+    ['l1','l2','l3'].forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.classList.toggle('done', i + 1 < active);
+    });
+  }
+
+  function fmt(s) {
+    const m = Math.floor(s / 60);
+    const ss = s % 60;
+    return `${m}:${ss.toString().padStart(2,'0')}`;
+  }
+
+  // ── Waveform animation ──
+  function drawWave() {
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    const step = Math.floor(data.length / BAR_COUNT);
+    bars.forEach((b, i) => {
+      const val = data[i * step] || 0;
+      const h = Math.max(4, (val / 255) * 44);
+      b.style.height = h + 'px';
+    });
+    animFrame = requestAnimationFrame(drawWave);
+  }
+
+  // ── Record toggle ──
+  async function toggleRecord() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  }
+
+  async function startRecording() {
+    const oaKey = localStorage.getItem('oa_key');
+    if (!oaKey) {
+      openSettings();
+      setStatus('Nejdříve nastav OpenAI API klíč', 'error');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Analyser for waveform
+      const ctx = new AudioContext();
+      const src = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      waveform.classList.add('active');
+      drawWave();
+
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: getSupportedMime() });
+      mediaRecorder.ondataavailable = e => { if (e.data.size) audioChunks.push(e.data); };
+      mediaRecorder.onstop = processAudio;
+      mediaRecorder.start(100);
+
+      // UI
+      document.getElementById('recordBtn').classList.add('recording');
+      document.getElementById('recordLabel').textContent = 'Zastavit nahrávání';
+      timerSec = 0;
+      document.getElementById('timer').textContent = fmt(0);
+      timerInterval = setInterval(() => {
+        timerSec++;
+        document.getElementById('timer').textContent = fmt(timerSec);
+      }, 1000);
+
+      setStep(1);
+      setStatus('Nahrávám…', 'active');
+      document.getElementById('resultCard').classList.remove('visible');
+
+    } catch (err) {
+      setStatus('Chyba mikrofonu: ' + err.message, 'error');
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder) {
+      mediaRecorder.stop();
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    }
+    clearInterval(timerInterval);
+    cancelAnimationFrame(animFrame);
+    waveform.classList.remove('active');
+    bars.forEach(b => b.style.height = '4px');
+    document.getElementById('recordBtn').classList.remove('recording');
+    document.getElementById('recordLabel').textContent = 'Nahrát poznámku';
+    document.getElementById('timer').textContent = '';
+  }
+
+  function getSupportedMime() {
+    const types = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  }
+
+  // ── Process audio ──
+  async function processAudio() {
+    const mime = audioChunks[0]?.type || 'audio/webm';
+    const blob = new Blob(audioChunks, { type: mime });
+
+    try {
+      // Step 2 – transcribe
+      setStep(2);
+      setStatus('Přepisuji audio…', 'active');
+      const raw = await transcribe(blob);
+      document.getElementById('textRaw').textContent = raw;
+
+      // Step 3 – edit
+      setStep(3);
+      setStatus('Upravuji text…', 'active');
+      const edited = await editText(raw);
+      document.getElementById('textEdited').textContent = edited;
+
+      // Step 4 – done
+      setStep(4);
+      setStatus('Hotovo — text zkopírován do schránky');
+      document.getElementById('resultCard').classList.add('visible');
+
+      // Auto-copy
+      await navigator.clipboard.writeText(edited).catch(() => {});
+      showCopied();
+
+    } catch (err) {
+      setStatus('Chyba: ' + err.message, 'error');
+    }
+  }
+
+  // ── OpenAI Whisper ──
+  async function transcribe(blob) {
+    const key = localStorage.getItem('oa_key');
+
+    const mime = blob.type || 'audio/webm';
+    let ext = 'webm';
+    if (mime.includes('mp4'))      ext = 'mp4';
+    else if (mime.includes('ogg')) ext = 'ogg';
+    else if (mime.includes('wav')) ext = 'wav';
+
+    const form = new FormData();
+    form.append('file', blob, `recording.${ext}`);
+    form.append('model', 'whisper-1');
+    form.append('language', 'cs');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key },
+      body: form
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err?.error?.message || JSON.stringify(err) || res.status;
+      throw new Error('Whisper: ' + msg);
+    }
+
+    const data = await res.json();
+    return data.text || '';
+  }
+
+  // ── OpenAI GPT-4o ──
+  async function editText(raw) {
+    const key    = localStorage.getItem('oa_key');
+    const model  = localStorage.getItem('oa_model') || 'gpt-4o';
+    const prompt = localStorage.getItem('oa_prompt') ||
+      'Jsi editor textu. Tvým úkolem je upravit přepis mluveného slova do čistého, gramaticky správného českého textu. Oprav interpunkci, odstraň zbytečná opakování a slovní výplně. Zachovej původní smysl a obsah. Neodpovídáš na otázky ani nepřidáváš žádné komentáře — pouze upravuješ text. Vrať výhradně upravený text.';
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user',   content: raw }
+        ],
+        temperature: 0.3
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error('OpenAI: ' + (err?.error?.message || res.status));
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+  }
+
+  // ── Tabs ──
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('panel-' + tab).classList.add('active');
+  }
+
+  // ── Clipboard ──
+  async function copyToClipboard() {
+    const text = currentTab === 'edited'
+      ? document.getElementById('textEdited').textContent
+      : document.getElementById('textRaw').textContent;
+    await navigator.clipboard.writeText(text).catch(() => {});
+    showCopied();
+  }
+
+  function showCopied() {
+    const badge = document.getElementById('copiedBadge');
+    badge.classList.add('show');
+    setTimeout(() => badge.classList.remove('show'), 2000);
+  }
+
+  // ── Reset ──
+  function resetAll() {
+    document.getElementById('resultCard').classList.remove('visible');
+    document.getElementById('textEdited').textContent = '';
+    document.getElementById('textRaw').textContent = '';
+    setStatus('Stiskni tlačítko a začni mluvit');
+    setStep(0);
+    switchTabDirect('edited');
+  }
+
+  function switchTabDirect(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + tab).classList.add('active');
+  }
+
+  // ── Service Worker ──
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
