@@ -528,9 +528,43 @@
 
     .btn-danger { color: var(--danger) !important; }
     .btn-danger:hover { color: var(--danger) !important; opacity: 0.8; }
+
+    /* ── Update banner ── */
+    #updateBanner {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--accent);
+      padding: 12px 20px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text);
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+      animation: slideUp .3s ease;
+    }
+    #updateBanner.visible { display: flex; }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    #updateBanner strong { color: var(--accent); }
   </style>
 </head>
 <body>
+
+<!-- Update banner -->
+<div id="updateBanner" role="alert" aria-live="assertive">
+  <strong>Nová verze je k dispozici.</strong>
+  <span>Načti stránku znovu pro aktualizaci.</span>
+  <button class="btn-settings" onclick="window.location.reload()">Obnovit</button>
+</div>
 
 <header>
   <h1>Hlasová <span>poznámka ver. 0.01</span></h1>
@@ -1110,8 +1144,16 @@
   updateTotalCost();
 
   // ── Service Worker ──
+  function showUpdateBanner() {
+    document.getElementById('updateBanner').classList.add('visible');
+  }
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Zobrazit banner jen při aktualizaci, ne při první instalaci SW
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener('controllerchange', showUpdateBanner);
+    }
   }
 </script>
 </body>
