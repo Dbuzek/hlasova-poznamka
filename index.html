@@ -423,13 +423,122 @@
       letter-spacing: 0.06em;
       border-top: 1px solid var(--border);
     }
+
+    /* ── Header right group ── */
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .total-cost {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      padding-right: 4px;
+    }
+
+    .btn-history {
+      border-color: var(--border);
+    }
+    .btn-history:hover,
+    .btn-history.active { border-color: var(--accent2); color: var(--accent2); }
+
+    /* ── Cost bar ── */
+    .cost-bar {
+      padding: 7px 16px;
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      letter-spacing: 0.03em;
+      display: none;
+    }
+    .cost-bar.visible { display: block; }
+    .cost-bar span { color: var(--text); }
+
+    /* ── History section ── */
+    .history-section {
+      display: none;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 20px 28px;
+    }
+    .history-section.open { display: block; }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0 10px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    .history-stats {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .history-stats strong { color: var(--text); }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .history-entry {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      animation: fadeUp .2s ease;
+    }
+
+    .history-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .history-cost { color: var(--accent); }
+
+    .history-preview {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.55;
+      word-break: break-word;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    .btn-danger { color: var(--danger) !important; }
+    .btn-danger:hover { color: var(--danger) !important; opacity: 0.8; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>Hlasová <span>poznámka ver. 0.01</span></h1>
-  <button class="btn-settings" onclick="openSettings()">⚙ Nastavení</button>
+  <div class="header-right">
+    <span id="totalCostDisplay" class="total-cost" style="display:none"></span>
+    <button class="btn-settings btn-history" id="historyBtn" onclick="toggleHistory()">Historie (0)</button>
+    <button class="btn-settings" onclick="openSettings()">⚙ Nastavení</button>
+  </div>
 </header>
 
 <main>
@@ -474,6 +583,7 @@
     <div class="tab-panel" id="panel-raw">
       <div class="result-text" id="textRaw"></div>
     </div>
+    <div class="cost-bar" id="costBar"></div>
     <div class="result-actions">
       <button class="btn btn-primary" onclick="copyToClipboard()">Kopírovat</button>
       <button class="btn btn-secondary" onclick="resetAll()">Nová poznámka</button>
@@ -482,6 +592,14 @@
   </div>
 
 </main>
+
+<section class="history-section" id="historyPanel">
+  <div class="history-header">
+    <div class="history-stats" id="historyStats"></div>
+    <button class="btn btn-ghost" onclick="clearHistory()">Vymazat historii</button>
+  </div>
+  <div class="history-list" id="historyList"></div>
+</section>
 
 <footer>OpenAI Whisper · GPT-4o</footer>
 
@@ -679,6 +797,7 @@
   async function processAudio() {
     const mime = audioChunks[0]?.type || 'audio/webm';
     const blob = new Blob(audioChunks, { type: mime });
+    const recDuration = timerSec;
 
     try {
       // Step 2 – transcribe
@@ -690,12 +809,32 @@
       // Step 3 – edit
       setStep(3);
       setStatus('Upravuji text…', 'active');
-      const edited = await editText(raw);
+      const model = localStorage.getItem('oa_model') || 'gpt-4o';
+      const { text: edited, usage } = await editText(raw);
       document.getElementById('textEdited').textContent = edited;
 
       // Step 4 – done
       setStep(4);
       setStatus('Hotovo — text zkopírován do schránky');
+
+      // Cost calculation
+      const cost = calcCost(recDuration, model, usage);
+      showCostBar(recDuration, model, cost);
+
+      // Save to history
+      const entry = {
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        durationSec: recDuration,
+        model,
+        textEdited: edited,
+        textRaw: raw,
+        cost
+      };
+      saveToHistory(entry);
+      updateHistoryBtn();
+      updateTotalCost();
+
       document.getElementById('resultCard').classList.add('visible');
 
       // Auto-copy
@@ -767,7 +906,159 @@
     }
 
     const data = await res.json();
-    return data.choices?.[0]?.message?.content?.trim() || '';
+    return {
+      text: data.choices?.[0]?.message?.content?.trim() || '',
+      usage: data.usage || {}
+    };
+  }
+
+  // ── Cost calculation ──
+  const GPT_PRICES = {
+    'gpt-4o':      { input: 2.50,  output: 10.00 },
+    'gpt-4o-mini': { input: 0.15,  output: 0.60  },
+    'gpt-4-turbo': { input: 10.00, output: 30.00 }
+  };
+
+  function calcCost(durationSec, model, usage) {
+    const whisperMinutes = durationSec / 60;
+    // Whisper billed in 1-second increments, min 1s
+    const whisperCost = Math.max(1, durationSec) / 60 * 0.006;
+    const prices = GPT_PRICES[model] || GPT_PRICES['gpt-4o'];
+    const gptCost = ((usage.prompt_tokens || 0) * prices.input
+                   + (usage.completion_tokens || 0) * prices.output) / 1_000_000;
+    return {
+      whisperMinutes,
+      whisperCost,
+      promptTokens:     usage.prompt_tokens     || 0,
+      completionTokens: usage.completion_tokens  || 0,
+      totalTokens:      usage.total_tokens       || 0,
+      gptCost,
+      totalCost: whisperCost + gptCost
+    };
+  }
+
+  function showCostBar(durationSec, model, cost) {
+    const bar = document.getElementById('costBar');
+    bar.innerHTML =
+      `Whisper ${fmt(durationSec)} · <span>$${cost.whisperCost.toFixed(4)}</span>`
+      + ` &nbsp;·&nbsp; ${model} ${cost.totalTokens} tok · <span>$${cost.gptCost.toFixed(4)}</span>`
+      + ` &nbsp;·&nbsp; Celkem <span>$${cost.totalCost.toFixed(4)}</span>`;
+    bar.classList.add('visible');
+  }
+
+  // ── History storage ──
+  function saveToHistory(entry) {
+    try {
+      const history = JSON.parse(localStorage.getItem('oa_history') || '[]');
+      history.push(entry);
+      localStorage.setItem('oa_history', JSON.stringify(history.slice(-50)));
+    } catch (e) { /* localStorage full or unavailable – silently ignore */ }
+  }
+
+  function loadHistory() {
+    try {
+      return JSON.parse(localStorage.getItem('oa_history') || '[]');
+    } catch (e) { return []; }
+  }
+
+  function deleteHistoryEntry(id) {
+    try {
+      const history = loadHistory().filter(e => e.id !== id);
+      localStorage.setItem('oa_history', JSON.stringify(history));
+    } catch (e) {}
+    renderHistory();
+    updateHistoryBtn();
+    updateTotalCost();
+  }
+
+  function clearHistory() {
+    if (!confirm('Opravdu chceš smazat celou historii přepisů?')) return;
+    localStorage.removeItem('oa_history');
+    renderHistory();
+    updateHistoryBtn();
+    updateTotalCost();
+  }
+
+  // ── History UI ──
+  function updateHistoryBtn() {
+    const count = loadHistory().length;
+    const btn = document.getElementById('historyBtn');
+    if (btn) btn.textContent = `Historie (${count})`;
+  }
+
+  function updateTotalCost() {
+    const history = loadHistory();
+    const total = history.reduce((s, e) => s + (e.cost?.totalCost || 0), 0);
+    const el = document.getElementById('totalCostDisplay');
+    if (!el) return;
+    if (history.length === 0 || total === 0) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = '';
+      el.textContent = `$${total.toFixed(4)} celkem`;
+    }
+  }
+
+  function toggleHistory() {
+    const panel = document.getElementById('historyPanel');
+    const btn   = document.getElementById('historyBtn');
+    const open  = panel.classList.toggle('open');
+    btn.classList.toggle('active', open);
+    if (open) renderHistory();
+  }
+
+  function renderHistory() {
+    const history = loadHistory();
+    const list  = document.getElementById('historyList');
+    const stats = document.getElementById('historyStats');
+
+    if (!list) return;
+
+    // Stats bar
+    const totalCost = history.reduce((s, e) => s + (e.cost?.totalCost || 0), 0);
+    stats.innerHTML = history.length === 0
+      ? 'Zatím žádné záznamy'
+      : `<strong>${history.length}</strong> záznamu &nbsp;·&nbsp; Celkové náklady: <strong>$${totalCost.toFixed(4)}</strong>`;
+
+    if (history.length === 0) { list.innerHTML = ''; return; }
+
+    list.innerHTML = [...history].reverse().map(e => {
+      const date = new Date(e.timestamp).toLocaleString('cs-CZ', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+      const preview = (e.textEdited || e.textRaw || '').slice(0, 120);
+      const cost = e.cost ? `$${e.cost.totalCost.toFixed(4)}` : '';
+      return `<div class="history-entry">
+        <div class="history-meta">
+          <span>${date}</span>
+          <span>${fmt(e.durationSec || 0)}</span>
+          <span>${e.model || ''}</span>
+          <span class="history-cost">${cost}</span>
+        </div>
+        <div class="history-preview">${escHtml(preview)}${preview.length === 120 ? '…' : ''}</div>
+        <div class="history-actions">
+          <button class="btn btn-ghost" onclick="copyHistoryEntry('${e.id}', 'edited')">Kopírovat upravený</button>
+          <button class="btn btn-ghost" onclick="copyHistoryEntry('${e.id}', 'raw')">Kopírovat přepis</button>
+          <button class="btn btn-ghost btn-danger" onclick="deleteHistoryEntry('${e.id}')">Smazat</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function copyHistoryEntry(id, type) {
+    const entry = loadHistory().find(e => e.id === id);
+    if (!entry) return;
+    const text = type === 'raw' ? entry.textRaw : entry.textEdited;
+    await navigator.clipboard.writeText(text || '').catch(() => {});
+    // Brief visual feedback via status
+    const prev = document.getElementById('status').textContent;
+    setStatus('✓ Zkopírováno z historie');
+    setTimeout(() => setStatus(prev), 1500);
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   // ── Tabs ──
@@ -799,6 +1090,9 @@
     document.getElementById('resultCard').classList.remove('visible');
     document.getElementById('textEdited').textContent = '';
     document.getElementById('textRaw').textContent = '';
+    const costBar = document.getElementById('costBar');
+    costBar.classList.remove('visible');
+    costBar.innerHTML = '';
     setStatus('Stiskni tlačítko a začni mluvit');
     setStep(0);
     switchTabDirect('edited');
@@ -810,6 +1104,10 @@
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
   }
+
+  // ── Init ──
+  updateHistoryBtn();
+  updateTotalCost();
 
   // ── Service Worker ──
   if ('serviceWorker' in navigator) {
